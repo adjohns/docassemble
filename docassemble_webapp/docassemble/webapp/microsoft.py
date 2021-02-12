@@ -10,6 +10,7 @@ from azure.storage.blob import BlobServiceClient, BlobSasPermissions, ContentSet
 ## Change: Add packages we will need from identity and key vault
 from azure.identity import ManagedIdentityCredential
 from azure.keyvault.secrets import SecretClient
+from docassemble.base.config import daconfig
 
 epoch = pytz.utc.localize(datetime.datetime.utcfromtimestamp(0))
 
