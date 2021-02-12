@@ -4,7 +4,11 @@ import io
 import time
 import pytz
 import mimetypes
+import re
 from azure.storage.blob import BlobServiceClient, BlobSasPermissions, ContentSettings, generate_blob_sas
+## Change: Add packages we will need from identity and key vault
+from azure.identity import ManagedIdentityCredential
+from azure.keyvault.secrets import SecretClient
 
 epoch = pytz.utc.localize(datetime.datetime.utcfromtimestamp(0))
 
@@ -25,6 +29,14 @@ class azureobject(object):
             self.container_client = self.service_client.get_container_client(azure_config['container'])
         else:
             raise Exception("Cannot connect to Azure without account name, account key, and container specified")
+        ## Change: adding in logic to parse new configuration settings for azure key vault and managed identity
+        if ('key vault name' in azure_config and azure_config['key vault name'] is not None and 'managed identity' in azure_config and azure_config['managed identity'] is not None):
+            self.credential = ManagedIdentityCredential()
+            self.key_vault_name = azure_config.get('key vault name', None)
+            self.key_vault_base_url = 'https://%s.vault.azure.net/' % (key_vault_name)
+            self.secret_client = SecretClient(vault_url=self.key_vault_base_url, credential=self.credential)
+        else:
+            raise Exception("Cannot connect to Azure Key Vault without key vault name, and managed identity specified")
     def get_key(self, key_name):
         new_key = azurekey(self, key_name, load=False)
         if new_key.exists():
@@ -43,6 +55,14 @@ class azureobject(object):
         for blob in self.container_client.list_blobs(name_starts_with=prefix):
             output.append(azurekey(self, blob.name))
         return output
+    ## Change: Adding methods to retrieve key vault secrets from Azure object
+    def get_secret(self, key_vault_reference):
+        new_secret = azuresecret(self, key_vault_reference)
+        return new_secret.get_secret_as_string()
+    ## Change: Adding regex search and replace function for Azure Secrets
+    def replace_secrets(self, match):
+        match = match.groups()
+        return self.get_secret(match[0])
 
 class azurekey(object):
     def __init__(self, azure_object, key_name, load=True):
@@ -115,3 +135,35 @@ class azurekey(object):
             content_type=content_type
         )
         return self.blob_client.url + '?' + token
+
+## Change: Adding class for an Azure secret
+class azuresecret(object):
+    def __init__(self, azure_object, key_vault_reference):
+        self.azure_object = azure_object
+        self.secret_client = azure_object.secret_client
+        self.key_vault_reference = key_vault_reference
+        self.secret = None
+        self.secret_value = None
+        self.reference_secret_name = None
+        self.reference_secret_version= None
+
+    def set_secret_reference_components(self):
+        secret_regex=re.compile('(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))')
+        secret_match=secret_regex.search(self.key_vault_reference)
+        if secret_match is not None:
+            self.reference_vault_name = secret_match.groups()[1]
+            self.reference_secret_name = secret_match.groups()[2]
+            if len(secret_match.groups()) > 3:
+                self.reference_secret_version = secret_match.groups()[3]
+        else:
+            raise Exception("Invalid format for Azure Key Vault reference value in configuration!")
+
+    def get_secret_from_vault(self):
+        self.secret = self.secret_client.get_secret(self.reference_secret_name, self.reference_secret_version)
+        self.secret_value = self.secret.value
+
+    def get_secret_as_string(self):
+        if self.secret is None:
+            self.set_secret_reference_components()
+            self.get_secret_from_vault()
+        return self.secret_value
