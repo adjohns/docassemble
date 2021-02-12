@@ -33,7 +33,7 @@ class azureobject(object):
         if ('key vault name' in azure_config and azure_config['key vault name'] is not None and 'managed identity' in azure_config and azure_config['managed identity'] is not None):
             self.credential = ManagedIdentityCredential()
             self.key_vault_name = azure_config.get('key vault name', None)
-            self.key_vault_base_url = 'https://%s.vault.azure.net/' % (key_vault_name)
+            self.key_vault_base_url = 'https://%s.vault.azure.net/' % (self.key_vault_name)
             self.secret_client = SecretClient(vault_url=self.key_vault_base_url, credential=self.credential)
         else:
             raise Exception("Cannot connect to Azure Key Vault without key vault name, and managed identity specified")
