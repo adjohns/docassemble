@@ -10,7 +10,6 @@ from azure.storage.blob import BlobServiceClient, BlobSasPermissions, ContentSet
 ## Change: Add packages we will need from identity and key vault
 from azure.identity import ManagedIdentityCredential
 from azure.keyvault.secrets import SecretClient
-from docassemble.base.config import daconfig
 
 epoch = pytz.utc.localize(datetime.datetime.utcfromtimestamp(0))
 
@@ -23,9 +22,9 @@ class azureobject(object):
             self.key_vault_base_url = 'https://%s.vault.azure.net/' % (self.key_vault_name)
             self.secret_client = SecretClient(vault_url=self.key_vault_base_url, credential=self.credential)
             ## This is where we would want to loop through the daconfig for all values, and replace the key vault references with secret values where applicable, using the cloud object
-            daconfig_dump_raw = yaml.dump(daconfig)
-            daconfig_dump_replace_secrets = re.sub(r'(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))', self.replace_secrets, daconfig_dump_raw)
-            daconfig = yaml.load(daconfig_dump_replace_secrets, Loader=yaml.FullLoader)
+            azure_config_dump_raw = yaml.dump(azure_config)
+            azure_config_dump_replace_secrets = re.sub(r'(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))', self.replace_secrets, azure_config_dump_raw)
+            azure_config = yaml.load(azure_config_dump_replace_secrets, Loader=yaml.FullLoader)
         else:
             raise Exception("Cannot connect to Azure Key Vault without key vault name, and managed identity specified")
         if ('account name' in azure_config and azure_config['account name'] is not None and 'account key' in azure_config and azure_config['account key'] is not None and 'container' in azure_config and azure_config['container'] is not None) or ('connection string' in azure_config and azure_config['connection string'] is not None and 'container' in azure_config and azure_config['container'] is not None):

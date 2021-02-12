@@ -196,6 +196,11 @@ def load(**kwargs):
     elif AZURE_ENABLED:
         import docassemble.webapp.microsoft
         cloud = docassemble.webapp.microsoft.azureobject(azure_config)
+        ## This is where we would want to loop through the daconfig for all values, and replace the key vault references with secret values where applicable, using the cloud object
+        if ('key vault name' in azure_config and azure_config['key vault name'] is not None and 'managed identity' in azure_config and azure_config['managed identity'] is not None):
+            daconfig_dump_raw = yaml.dump(daconfig)
+            daconfig_dump_replace_secrets = re.sub(r'(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))', cloud.replace_secrets, daconfig_dump_raw)
+            daconfig = yaml.load(daconfig_dump_replace_secrets, Loader=yaml.FullLoader)
     else:
         cloud = None
     if 'suppress error notificiations' in daconfig and isinstance(daconfig['suppress error notificiations'], list):
