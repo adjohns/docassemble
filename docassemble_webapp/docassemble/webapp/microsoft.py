@@ -5,6 +5,7 @@ import time
 import pytz
 import mimetypes
 import re
+import yaml
 from azure.storage.blob import BlobServiceClient, BlobSasPermissions, ContentSettings, generate_blob_sas
 ## Change: Add packages we will need from identity and key vault
 from azure.identity import ManagedIdentityCredential
@@ -14,6 +15,18 @@ epoch = pytz.utc.localize(datetime.datetime.utcfromtimestamp(0))
 
 class azureobject(object):
     def __init__(self, azure_config):
+        ## Change: adding in logic to parse new configuration settings for azure key vault and managed identity
+        if ('key vault name' in azure_config and azure_config['key vault name'] is not None and 'managed identity' in azure_config and azure_config['managed identity'] is not None):
+            self.credential = ManagedIdentityCredential()
+            self.key_vault_name = azure_config.get('key vault name', None)
+            self.key_vault_base_url = 'https://%s.vault.azure.net/' % (self.key_vault_name)
+            self.secret_client = SecretClient(vault_url=self.key_vault_base_url, credential=self.credential)
+            ## This is where we would want to loop through the daconfig for all values, and replace the key vault references with secret values where applicable, using the cloud object
+            daconfig_dump_raw = yaml.dump(daconfig)
+            daconfig_dump_replace_secrets = re.sub(r'(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))', self.replace_secrets, daconfig_dump_raw)
+            daconfig = yaml.load(daconfig_dump_replace_secrets, Loader=yaml.FullLoader)
+        else:
+            raise Exception("Cannot connect to Azure Key Vault without key vault name, and managed identity specified")
         if ('account name' in azure_config and azure_config['account name'] is not None and 'account key' in azure_config and azure_config['account key'] is not None and 'container' in azure_config and azure_config['container'] is not None) or ('connection string' in azure_config and azure_config['connection string'] is not None and 'container' in azure_config and azure_config['container'] is not None):
             connection_string = azure_config.get('connection string', None)
             if not connection_string:
@@ -29,14 +42,6 @@ class azureobject(object):
             self.container_client = self.service_client.get_container_client(azure_config['container'])
         else:
             raise Exception("Cannot connect to Azure without account name, account key, and container specified")
-        ## Change: adding in logic to parse new configuration settings for azure key vault and managed identity
-        if ('key vault name' in azure_config and azure_config['key vault name'] is not None and 'managed identity' in azure_config and azure_config['managed identity'] is not None):
-            self.credential = ManagedIdentityCredential()
-            self.key_vault_name = azure_config.get('key vault name', None)
-            self.key_vault_base_url = 'https://%s.vault.azure.net/' % (self.key_vault_name)
-            self.secret_client = SecretClient(vault_url=self.key_vault_base_url, credential=self.credential)
-        else:
-            raise Exception("Cannot connect to Azure Key Vault without key vault name, and managed identity specified")
     def get_key(self, key_name):
         new_key = azurekey(self, key_name, load=False)
         if new_key.exists():
