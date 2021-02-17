@@ -11238,7 +11238,7 @@ def get_referer():
 
 def add_referer(user_dict, referer=None):
     if referer:
-        user_dict['_internal']['referer'] = referrer
+        user_dict['_internal']['referer'] = referer
     elif request.referrer:
         user_dict['_internal']['referer'] = request.referrer
     else:
@@ -14135,7 +14135,7 @@ def update_package_ajax():
                 if START_TIME > session['serverstarttime']:
                     return jsonify(success=True, status='finished', ok=the_result.ok, summary=summarize_results(the_result.results, the_result.logmessages))
                 else:
-                    jsonify(success=True, status='waiting')
+                    return jsonify(success=True, status='waiting')
             elif hasattr(the_result, 'error_message'):
                 logmessage("update_package_ajax: failed return value is " + str(the_result.error_message))
                 return jsonify(success=True, status='failed', error_message=str(the_result.error_message))
@@ -18054,6 +18054,9 @@ def playground_packages():
         return redirect(url_for('playground_packages', project=current_project, file=the_file))
     if request.method == 'POST' and validated and form.delete.data and the_file != '' and the_file == form.file_name.data and os.path.isfile(os.path.join(directory_for(area['playgroundpackages'], current_project), 'docassemble.' + the_file)):
         os.remove(os.path.join(directory_for(area['playgroundpackages'], current_project), 'docassemble.' + the_file))
+        dotfile = os.path.join(directory_for(area['playgroundpackages'], current_project), '.docassemble-' + the_file)
+        if os.path.exists(dotfile):
+            os.remove(dotfile)
         area['playgroundpackages'].finalize()
         flash(word("Deleted package"), "success")
         return redirect(url_for('playground_packages', project=current_project))
@@ -25650,7 +25653,9 @@ def manage_api():
 
 @app.route(html_index_path, methods=['GET'])
 def html_index():
-    return app.send_static_file('index.html')
+    resp = app.send_static_file('index.html')
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    return resp
 
 @app.route('/api/interview', methods=['GET', 'POST'])
 @csrf.exempt
