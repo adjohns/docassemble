@@ -7,7 +7,6 @@ import mimetypes
 import re
 import yaml
 from azure.storage.blob import BlobServiceClient, BlobSasPermissions, ContentSettings, generate_blob_sas
-## Change: Add packages we will need from identity and key vault
 from azure.identity import ManagedIdentityCredential
 from azure.keyvault.secrets import SecretClient
 
@@ -15,18 +14,13 @@ epoch = pytz.utc.localize(datetime.datetime.utcfromtimestamp(0))
 
 class azureobject(object):
     def __init__(self, azure_config):
-        ## Change: adding in logic to parse new configuration settings for azure key vault and managed identity
         if ('key vault name' in azure_config and azure_config['key vault name'] is not None and 'managed identity' in azure_config and azure_config['managed identity'] is not None):
             self.credential = ManagedIdentityCredential()
             self.key_vault_name = azure_config.get('key vault name', None)
             self.key_vault_base_url = 'https://%s.vault.azure.net/' % (self.key_vault_name)
             self.secret_client = SecretClient(vault_url=self.key_vault_base_url, credential=self.credential)
-            ## This is where we would want to loop through the daconfig for all values, and replace the key vault references with secret values where applicable, using the cloud object
-            azure_config_dump_raw = yaml.dump(azure_config)
-            azure_config_dump_replace_secrets = re.sub(r'(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))', self.replace_secrets, azure_config_dump_raw)
-            azure_config = yaml.load(azure_config_dump_replace_secrets, Loader=yaml.FullLoader)
-        else:
-            raise Exception("Cannot connect to Azure Key Vault without key vault name, and managed identity specified")
+            self.key_vault_reference_regex = r'(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))'
+            azure_config = self.load_with_secrets(azure_config)
         if ('account name' in azure_config and azure_config['account name'] is not None and 'account key' in azure_config and azure_config['account key'] is not None and 'container' in azure_config and azure_config['container'] is not None) or ('connection string' in azure_config and azure_config['connection string'] is not None and 'container' in azure_config and azure_config['container'] is not None):
             connection_string = azure_config.get('connection string', None)
             if not connection_string:
@@ -60,14 +54,17 @@ class azureobject(object):
         for blob in self.container_client.list_blobs(name_starts_with=prefix):
             output.append(azurekey(self, blob.name))
         return output
-    ## Change: Adding methods to retrieve key vault secrets from Azure object
     def get_secret(self, key_vault_reference):
         new_secret = azuresecret(self, key_vault_reference)
         return new_secret.get_secret_as_string()
-    ## Change: Adding regex search and replace function for Azure Secrets
     def replace_secrets(self, match):
         match = match.groups()
         return self.get_secret(match[0])
+    def load_with_secrets(self, config):
+        config_dump_raw = yaml.dump(config)
+        config_dump_replace_secrets = re.sub(self.key_vault_reference_regex, self.replace_secrets, config_dump_raw)
+        loaded_config_with_secrets = yaml.load(config_dump_replace_secrets, Loader=yaml.FullLoader)
+        return loaded_config_with_secrets
 
 class azurekey(object):
     def __init__(self, azure_object, key_name, load=True):
@@ -141,19 +138,19 @@ class azurekey(object):
         )
         return self.blob_client.url + '?' + token
 
-## Change: Adding class for an Azure secret
 class azuresecret(object):
     def __init__(self, azure_object, key_vault_reference):
         self.azure_object = azure_object
         self.secret_client = azure_object.secret_client
         self.key_vault_reference = key_vault_reference
+        self.key_vault_reference_regex = azure_object.key_vault_reference_regex
         self.secret = None
         self.secret_value = None
         self.reference_secret_name = None
         self.reference_secret_version= None
 
     def set_secret_reference_components(self):
-        secret_regex=re.compile('(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))')
+        secret_regex=re.compile(self.key_vault_reference_regex)
         secret_match=secret_regex.search(self.key_vault_reference)
         if secret_match is not None:
             self.reference_vault_name = secret_match.groups()[1]

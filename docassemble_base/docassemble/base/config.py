@@ -160,7 +160,6 @@ def load(**kwargs):
                 override_config(daconfig, null_messages, key, env_var, pre_key='azure')
         if env_exists('KUBERNETES'):
             override_config(daconfig, null_messages, 'kubernetes', 'KUBERNETES')
-    ## Change: Shifting cloud config parsing earlier in logic, so we can do a regex search and replace for Key Vault strings before the majority of our loading
     s3_config = daconfig.get('s3', None)
     if not s3_config or ('enable' in s3_config and not s3_config['enable']):
         S3_ENABLED = False
@@ -196,11 +195,8 @@ def load(**kwargs):
     elif AZURE_ENABLED:
         import docassemble.webapp.microsoft
         cloud = docassemble.webapp.microsoft.azureobject(azure_config)
-        ## This is where we would want to loop through the daconfig for all values, and replace the key vault references with secret values where applicable, using the cloud object
         if ('key vault name' in azure_config and azure_config['key vault name'] is not None and 'managed identity' in azure_config and azure_config['managed identity'] is not None):
-            daconfig_dump_raw = yaml.dump(daconfig)
-            daconfig_dump_replace_secrets = re.sub(r'(\@Microsoft\.KeyVault\(SecretUri=https:\/\/([\w-]+)\.vault\.azure\.net\/secrets\/([\w-]+)\/(\w+)?\))', cloud.replace_secrets, daconfig_dump_raw)
-            daconfig = yaml.load(daconfig_dump_replace_secrets, Loader=yaml.FullLoader)
+            daconfig = cloud.load_with_secrets(daconfig)
     else:
         cloud = None
     if 'suppress error notificiations' in daconfig and isinstance(daconfig['suppress error notificiations'], list):
